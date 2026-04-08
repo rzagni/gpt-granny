@@ -282,7 +282,7 @@ async function refreshChats() {
         const chatLabel = hasMore === 1 ? "chat" : "chats";
         setStatus(
           hasMore
-            ? `Loaded ${chats.length} ${chatLabel}.Scroll to the bottom to load more.`
+            ? `Loaded ${chats.length} ${chatLabel}. Scroll to the bottom to load more.`
             : `Loaded ${chats.length} ${chatLabel}.`
         );
         return;
