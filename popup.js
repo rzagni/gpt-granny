@@ -279,10 +279,11 @@ async function refreshChats() {
         nextOffset = PAGE_SIZE;
         hasMore = firstPage.length === PAGE_SIZE;
         renderChats();
+        const chatLabel = hasMore === 1 ? "chat" : "chats";
         setStatus(
           hasMore
-            ? `Loaded ${chats.length} chat(s). Scroll to the bottom to load more.`
-            : `Loaded ${chats.length} chat(s).`
+            ? `Loaded ${chats.length} ${chatLabel}.Scroll to the bottom to load more.`
+            : `Loaded ${chats.length} ${chatLabel}.`
         );
         return;
       }

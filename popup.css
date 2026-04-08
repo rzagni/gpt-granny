@@ -63,6 +63,7 @@ body {
 
 .hero-card,
 .controls-card,
+
 .list-card {
   position: relative;
   z-index: 1;
@@ -73,11 +74,33 @@ body {
   box-shadow: var(--shadow);
 }
 
-.hero-card {
+/* .hero-card {
   display: grid;
   grid-template-columns: 120px 1fr;
   gap: 14px;
   padding: 16px;
+  overflow: hidden;
+  background:
+    linear-gradient(180deg, rgba(255, 248, 251, 0.98), rgba(255, 240, 246, 0.92)),
+    var(--panel);
+} */
+
+/* .hero-card {
+  display: grid;
+  grid-template-columns: 120px 1fr;
+  gap: 18px;
+  padding: 18px 18px 20px;
+  overflow: hidden;
+  background:
+    linear-gradient(180deg, rgba(255, 248, 251, 0.98), rgba(255, 240, 246, 0.92)),
+    var(--panel);
+} */
+
+.hero-card {
+  display: grid;
+  grid-template-columns: 120px 1fr;
+  gap: 22px;
+  padding: 18px 20px 20px;
   overflow: hidden;
   background:
     linear-gradient(180deg, rgba(255, 248, 251, 0.98), rgba(255, 240, 246, 0.92)),
@@ -112,12 +135,23 @@ body {
   filter: drop-shadow(0 6px 12px rgba(124, 92, 105, 0.18));
 }
 
-.hero-copy h1 {
+
+/* .hero-copy h1 {
   margin: 8px 0 4px;
   font-size: 22px;
   line-height: 1.05;
   letter-spacing: -0.03em;
-}
+} */
+
+
+/* .hero-copy h1 {
+  margin: 0;
+  font-size: 28px;
+  line-height: 1;
+  letter-spacing: -0.05em;
+  font-weight: 900;
+  color: #5a2f4f;
+} */
 
 .brand-row {
   display: flex;
@@ -140,23 +174,58 @@ body {
   letter-spacing: 0.04em;
 }
 
-.tagline {
+/* .tagline {
   margin: 0;
   color: var(--purple);
   font-size: 15px;
   font-weight: 800;
-}
+} */
 
-.hero-text {
+
+/* .hero-text {
   margin: 10px 0 0;
   font-size: 13px;
   font-style: italic;
   line-height: 1.45;
   color: var(--muted);
   max-width: 200px;
+} */
+
+.hero-copy {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 6px;
+  min-width: 0;
 }
 
+.hero-copy h1 {
+  margin: 0;
+  font-size: 29px;
+  line-height: 0.98;
+  letter-spacing: -0.05em;
+  font-weight: 900;
+  color: #5a2f4f;
+}
 
+.tagline {
+  margin: 6px 0 0;
+  font-size: 9px;
+  line-height: 1.25;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: #9a5aa0;
+}
+
+.hero-text {
+  margin: 10px 0 0;
+  font-size: 12px;
+  line-height: 1.5;
+  font-weight: 600;
+  color: #866b80;
+  max-width: 255px;
+}
 .controls-card,
 .list-card {
   padding: 14px;
@@ -357,8 +426,8 @@ body {
   transform: translateX(-50%);
   padding: 10px 14px;
   border-radius: 999px;
-  background: rgba(74, 43, 66, 0.92);
-  color: #fff;
+  background: #f3e0ef;
+  color: #8e6a93;
   font-size: 12px;
   font-weight: 700;
   box-shadow: 0 10px 24px rgba(74, 43, 66, 0.22);
