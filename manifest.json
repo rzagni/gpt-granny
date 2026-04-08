@@ -7,7 +7,7 @@
   "host_permissions": ["https://chatgpt.com/*"],
   "action": {
     "default_title": "GPT Granny",
-    "default_popup": "popup.html"
+    "default_popup": "granny.html"
   },
   "icons": {
     "128": "icons/128.png"
