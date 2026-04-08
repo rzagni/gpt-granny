@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>GPT Granny</title>
+  <link rel="stylesheet" href="popup.css" />
+</head>
+<body>
+  <div class="popup-shell">
+    <div class="sparkle sparkle--1"></div>
+    <div class="sparkle sparkle--2"></div>
+    <div class="sparkle sparkle--3"></div>
+
+    <header class="hero-card">
+      <div class="hero-art">
+        <img src="assets/granny.png" alt="GPT Granny mascot" class="hero-image" />
+      </div>
+
+      <div class="hero-copy">
+        <br />
+        <br />
+        <h1>GPT Granny</h1>
+        <p class="tagline">Granny-approved cleanup</p>
+        <p class="hero-text">
+          AI may be smart, but Granny keeps the house tidy.
+        </p>
+      </div>
+    </header>
+
+    <section class="controls-card">
+      <div id="status" class="status status-idle">Granny is ready to tidy up.</div>
+
+      <div class="button-row">
+        <button id="refreshBtn" class="btn btn-secondary" type="button">
+          <span class="btn-icon">↻</span>
+          Refresh chats
+        </button>
+        <button id="deleteBtn" class="btn btn-primary" type="button">
+          <span class="btn-icon">🧹</span>
+          Sweep
+        </button>
+      </div>
+
+      <p class="helper-text">
+        Open chatgpt.com, refresh the list, then let Granny sweep away the selected clutter.
+      </p>
+
+      <div hidden>
+        <button id="selectAllBtn" type="button">Select all</button>
+        <button id="clearBtn" type="button">Clear</button>
+      </div>
+    </section>
+
+    <section class="list-card">
+      <label class="select-row">
+        <input type="checkbox" id="selectAllVisible" />
+        <span>Select all Chats</span>
+      </label>
+
+      <div class="list-header">
+        <div class="list-title-wrap">
+          <span class="flower">✿</span>
+          <h2>Chats</h2>
+        </div>
+        <span id="selectedCount" class="chat-count">0 selected</span>
+      </div>
+
+      <div id="chatList" class="chat-list"></div>
+      <div id="loadMoreToast" class="load-more-toast" hidden>
+        Loading more chats...
+      </div>
+    </section>
+  </div>
+
+
+  <script src="popup.js"></script>
+</body>
+</html>
