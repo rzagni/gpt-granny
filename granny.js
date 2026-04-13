@@ -17,6 +17,9 @@ let hasMore = true;
 let isLoadingMore = false;
 let loadedFromBackend = false;
 
+// Configurable variable for concurrent deletion.
+const DELETE_BATCH_SIZE = 10;
+
 function setStatus(message) {
   statusEl.textContent = message;
 }
@@ -310,12 +313,14 @@ async function refreshChats() {
   }
 }
 
+
+
 async function deleteSelectedChats() {
   const selected = chats.filter((chat) => chat.checked);
   if (!selected.length) return;
 
   const confirmed = confirm(
-    `Delete ${selected.length} selected chat(s)? This removes them from ChatGPT. This action cannot be reversed !`
+    `Delete ${selected.length} selected chat(s)? This removes them from ChatGPT. This action cannot be reversed!`
   );
 
   if (!confirmed) return;
@@ -328,106 +333,126 @@ async function deleteSelectedChats() {
     let failCount = 0;
     const deletedIds = [];
 
-    for (let i = 0; i < selected.length; i += 1) {
-      const chat = selected[i];
-      setStatus(`Deleting ${i + 1} of ${selected.length}: ${chat.title}`);
+    // 1. Fetch the Auth Token ONCE before starting the loop.
+    // This prevents sending simultaneous auth requests during batching.
+    setStatus("Fetching authorization token...");
+    const token = await runInPage(tab.id, async () => {
+      try {
+        const sessionResponse = await fetch("/api/auth/session", {
+          method: "GET",
+          credentials: "include"
+        });
+        if (!sessionResponse.ok) return null;
+        const session = await sessionResponse.json();
+        return session?.accessToken || null;
+      } catch (e) {
+        return null;
+      }
+    });
 
-      const result = await runInPage(
-        tab.id,
-        async (conversationId) => {
-          try {
-            const sessionResponse = await fetch("/api/auth/session", {
-              method: "GET",
-              credentials: "include"
-            });
+    if (!token) {
+      throw new Error("Failed to get auth token. Please check your ChatGPT session.");
+    }
 
-            if (!sessionResponse.ok) {
-              return {
-                ok: false,
-                error: `Failed to get auth session: HTTP ${sessionResponse.status}`
-              };
-            }
+    // 2. Process deletions in controlled batches
+    for (let i = 0; i < selected.length; i += DELETE_BATCH_SIZE) {
+      // Slice out the current batch of chats
+      const batch = selected.slice(i, i + DELETE_BATCH_SIZE);
+      const currentEnd = Math.min(i + DELETE_BATCH_SIZE, selected.length);
 
-            const session = await sessionResponse.json();
-            const token = session?.accessToken;
+      setStatus(`Deleting chats ${i + 1} to ${currentEnd} of ${selected.length}...`);
 
-            if (!token) {
-              return {
-                ok: false,
-                error: "No access token found in session."
-              };
-            }
+      // Map the batch to an array of Promises
+      const batchPromises = batch.map((chat) => {
+        return runInPage(
+          tab.id,
+          async (conversationId, authToken) => {
+            try {
+              const response = await fetch(
+                `/backend-api/conversation/${encodeURIComponent(conversationId)}`,
+                {
+                  method: "PATCH",
+                  credentials: "include",
+                  headers: {
+                    Authorization: `Bearer ${authToken}`,
+                    "Content-Type": "application/json"
+                  },
+                  body: JSON.stringify({ is_visible: false })
+                }
+              );
 
-            const response = await fetch(
-              `/backend-api/conversation/${encodeURIComponent(conversationId)}`,
-              {
-                method: "PATCH",
-                credentials: "include",
-                headers: {
-                  Authorization: `Bearer ${token}`,
-                  "Content-Type": "application/json"
-                },
-                body: JSON.stringify({ is_visible: false })
+              if (!response.ok) {
+                const text = await response.text();
+                return {
+                  ok: false,
+                  status: response.status,
+                  error: text || `HTTP ${response.status}`
+                };
               }
-            );
 
-            if (!response.ok) {
-              const text = await response.text();
-              return {
-                ok: false,
-                status: response.status,
-                error: text || `HTTP ${response.status}`
-              };
-            }
+              // DOM Cleanup inside the page
+              const selectors = [
+                `a[href="/c/${conversationId}"]`,
+                `a[href^="/c/${conversationId}"]`,
+                `a[href*="/c/${conversationId}"]`
+              ];
 
-            const selectors = [
-              `a[href="/c/${conversationId}"]`,
-              `a[href^="/c/${conversationId}"]`,
-              `a[href*="/c/${conversationId}"]`
-            ];
-
-            const removedNodes = [];
-            for (const selector of selectors) {
-              const nodes = document.querySelectorAll(selector);
-              for (const node of nodes) {
-                if (!removedNodes.includes(node)) {
-                  removedNodes.push(node);
+              const removedNodes = [];
+              for (const selector of selectors) {
+                const nodes = document.querySelectorAll(selector);
+                for (const node of nodes) {
+                  if (!removedNodes.includes(node)) {
+                    removedNodes.push(node);
+                  }
                 }
               }
-            }
 
-            for (const node of removedNodes) {
-              const row =
-                node.closest("li") ||
-                node.closest('[role="listitem"]') ||
-                node.closest("div");
-              if (row) {
-                row.remove();
-              } else {
-                node.remove();
+              for (const node of removedNodes) {
+                const row =
+                  node.closest("li") ||
+                  node.closest('[role="listitem"]') ||
+                  node.closest("div");
+                if (row) {
+                  row.remove();
+                } else {
+                  node.remove();
+                }
               }
+
+              return { ok: true };
+            } catch (error) {
+              return {
+                ok: false,
+                error: error.message || "Delete request failed"
+              };
             }
+          },
+          [chat.id, token] // Pass the cached token into the injected script
+        );
+      });
 
-            return { ok: true };
-          } catch (error) {
-            return {
-              ok: false,
-              error: error.message || "Delete request failed"
-            };
-          }
-        },
-        [chat.id]
-      );
+      // 3. Wait for all requests in the current batch to finish
+      // Using allSettled guarantees one failing fetch won't crash the whole batch
+      const batchResults = await Promise.allSettled(batchPromises);
 
-      if (result?.ok) {
-        successCount += 1;
-        deletedIds.push(chat.id);
-      } else {
-        failCount += 1;
-        //console.error("Delete failed for chat", chat.id, result);
+      // 4. Tally the results
+      batchResults.forEach((result, index) => {
+        const chat = batch[index];
+        if (result.status === "fulfilled" && result.value?.ok) {
+          successCount += 1;
+          deletedIds.push(chat.id);
+        } else {
+          failCount += 1;
+        }
+      });
+
+      // 5. Brief cooldown between batches to respect rate limits (500ms)
+      if (currentEnd < selected.length) {
+        await new Promise((resolve) => setTimeout(resolve, 500));
       }
     }
 
+    // 6. Final UI Updates
     if (deletedIds.length) {
       chats = chats.filter((chat) => !deletedIds.includes(chat.id));
       renderChats();
@@ -440,6 +465,8 @@ async function deleteSelectedChats() {
     }
   } catch (error) {
     setStatus(error.message || "Delete failed.");
+    // Re-evaluate button state in case of an early exit
+    updateSelectedCount();
   }
 }
 
