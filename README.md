@@ -1,1 +1,1 @@
-# gpt-granny
+# Granny GPT
