@@ -1,4 +1,9 @@
-const statusEl = document.getElementById("status");
+const statusTextEl = document.getElementById("status-text");
+const statusContainer = document.getElementById("status-container");
+const progressBar = document.getElementById("progress-bar");
+const progressWrapper = document.getElementById("progress-wrapper");
+const progressPercent = document.getElementById("progress-percent");
+
 const chatListEl = document.getElementById("chatList");
 const selectedCountEl = document.getElementById("selectedCount");
 const refreshBtn = document.getElementById("refreshBtn");
@@ -17,11 +22,10 @@ let hasMore = true;
 let isLoadingMore = false;
 let loadedFromBackend = false;
 
-// Configurable variable for concurrent deletion.
 const DELETE_BATCH_SIZE = 10;
 
 function setStatus(message) {
-  statusEl.textContent = message;
+  statusTextEl.textContent = message;
 }
 
 function escapeHtml(value) {
@@ -31,10 +35,6 @@ function escapeHtml(value) {
     .replaceAll(">", "&gt;")
     .replaceAll('"', "&quot;")
     .replaceAll("'", "&#039;");
-}
-
-function setStatus(message) {
-  statusEl.textContent = message;
 }
 
 function showLoadMoreToast(message = "Loading more chats...") {
@@ -48,22 +48,11 @@ function hideLoadMoreToast() {
   loadMoreToastEl.hidden = true;
 }
 
-function setLoadMoreHint(message = "") {
-  if (!loadMoreHintEl) return;
-  loadMoreHintEl.textContent = message;
-}
-
 async function getActiveChatGPTTab() {
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-
-  if (!tab?.id || !tab?.url) {
-    throw new Error("No active tab found.");
-  }
-
-  if (!/^https:\/\/chatgpt\.com\//.test(tab.url)) {
-    throw new Error("Open chatgpt.com in the active tab first.");
-  }
-
+  if (!tab?.id || !tab?.url) throw new Error("No active tab found.");
+  if (!/^https:\/\/chatgpt\.com\//.test(tab.url))
+    throw new Error("Open chatgpt.com first.");
   return tab;
 }
 
@@ -72,9 +61,8 @@ async function runInPage(tabId, func, args = []) {
     target: { tabId },
     world: "MAIN",
     func,
-    args
+    args,
   });
-
   return results?.[0]?.result;
 }
 
@@ -86,7 +74,8 @@ function updateSelectedCount() {
 
 function syncVisibleSelectAll() {
   if (!visibleSelectAll) return;
-  visibleSelectAll.checked = chats.length > 0 && chats.every((chat) => chat.checked);
+  visibleSelectAll.checked =
+    chats.length > 0 && chats.every((chat) => chat.checked);
 }
 
 function renderChats() {
@@ -109,7 +98,7 @@ function renderChats() {
           />
           <span class="chat-name">${escapeHtml(chat.title || "Untitled chat")}</span>
         </label>
-      `
+      `,
     )
     .join("");
 
@@ -119,15 +108,13 @@ function renderChats() {
 
 function appendChats(rawChats) {
   const seen = new Set(chats.map((chat) => chat.id));
-
   for (const item of rawChats || []) {
     if (!item?.id || seen.has(item.id)) continue;
     seen.add(item.id);
-
     chats.push({
       id: String(item.id),
       title: String(item.title || "Untitled chat"),
-      checked: false
+      checked: false,
     });
   }
 }
@@ -136,396 +123,166 @@ async function loadChatsPage(tabId, offset, limit) {
   return runInPage(
     tabId,
     async (pageOffset, pageLimit) => {
-      function cleanTitle(text) {
-        return (text || "").replace(/\s+/g, " ").trim();
-      }
-
-      function makeChat(id, title) {
-        return {
-          id,
-          title: cleanTitle(title) || "Untitled chat"
-        };
-      }
-
       async function getAccessToken() {
         const sessionResponse = await fetch("/api/auth/session", {
           method: "GET",
-          credentials: "include"
+          credentials: "include",
         });
-
-        if (!sessionResponse.ok) {
-          throw new Error(`Auth session failed: HTTP ${sessionResponse.status}`);
-        }
-
         const session = await sessionResponse.json();
-        const token = session?.accessToken;
-
-        if (!token) {
-          throw new Error("No access token found.");
-        }
-
-        return token;
+        return session?.accessToken;
       }
-
       const token = await getAccessToken();
-
       const response = await fetch(
         `/backend-api/conversations?offset=${pageOffset}&limit=${pageLimit}&order=updated`,
         {
           method: "GET",
           credentials: "include",
-          headers: {
-            Authorization: `Bearer ${token}`
-          }
-        }
+          headers: { Authorization: `Bearer ${token}` },
+        },
       );
-
-      if (!response.ok) {
-        const text = await response.text();
-        throw new Error(text || `HTTP ${response.status}`);
-      }
-
       const data = await response.json();
-      const items = Array.isArray(data?.items) ? data.items : [];
-
-      return items
-        .filter((item) => item?.id)
-        .map((item) => makeChat(item.id, item.title));
+      return (data?.items || []).map((item) => ({
+        id: item.id,
+        title: item.title,
+      }));
     },
-    [offset, limit]
+    [offset, limit],
   );
-}
-
-async function loadChatsFromDom(tabId) {
-  return runInPage(
-    tabId,
-    () => {
-      function cleanTitle(text) {
-        return (text || "").replace(/\s+/g, " ").trim();
-      }
-
-      const found = new Map();
-      const anchors = Array.from(
-        document.querySelectorAll('a[href^="/c/"], a[href*="/c/"]')
-      );
-
-      for (const anchor of anchors) {
-        const href = anchor.getAttribute("href") || "";
-        const match = href.match(/\/c\/([a-zA-Z0-9-]+)/);
-        if (!match) continue;
-
-        const id = match[1];
-        const title =
-          cleanTitle(anchor.textContent) ||
-          cleanTitle(anchor.getAttribute("aria-label")) ||
-          cleanTitle(anchor.title) ||
-          "Untitled chat";
-
-        if (!found.has(id)) {
-          found.set(id, { id, title });
-        }
-      }
-
-      return Array.from(found.values());
-    }
-  );
-}
-
-async function loadMoreChats() {
-  if (isLoadingMore || !hasMore || !loadedFromBackend || activeTabId == null) return;
-
-  isLoadingMore = true;
-  showLoadMoreToast("Loading more chats...");
-
-  try {
-    const page = await loadChatsPage(activeTabId, nextOffset, PAGE_SIZE);
-    appendChats(page);
-    renderChats();
-
-    if (page.length < PAGE_SIZE) {
-      hasMore = false;
-      setStatus(`Loaded ${chats.length} chat(s).`);
-    } else {
-      nextOffset += PAGE_SIZE;
-      setStatus(`Loaded ${chats.length} chat(s). Scroll to the bottom to load more.`);
-    }
-  } catch (error) {
-    hasMore = false;
-    setStatus(error.message || "Failed to load more chats.");
-  } finally {
-    hideLoadMoreToast();
-    isLoadingMore = false;
-  }
 }
 
 async function refreshChats() {
   try {
     setStatus("Loading chats...");
+    statusContainer.className = "status status-idle";
+    progressWrapper.hidden = true;
+    progressPercent.hidden = true;
     deleteBtn.disabled = true;
 
     chats = [];
     nextOffset = 0;
     hasMore = true;
-    isLoadingMore = false;
-    loadedFromBackend = false;
     renderChats();
 
     const tab = await getActiveChatGPTTab();
     activeTabId = tab.id;
 
-    try {
-      const firstPage = await loadChatsPage(activeTabId, 0, PAGE_SIZE);
-
-      if (firstPage.length) {
-        appendChats(firstPage);
-        loadedFromBackend = true;
-        nextOffset = PAGE_SIZE;
-        hasMore = firstPage.length === PAGE_SIZE;
-        renderChats();
-        const chatLabel = hasMore === 1 ? "chat" : "chats";
-        setStatus(
-          hasMore
-            ? `Loaded ${chats.length} ${chatLabel}. Scroll to the bottom to load more.`
-            : `Loaded ${chats.length} ${chatLabel}.`
-        );
-        return;
-      }
-    } catch (backendError) {
-      //console.warn("Backend load failed, trying DOM fallback:", backendError);
+    const firstPage = await loadChatsPage(activeTabId, 0, PAGE_SIZE);
+    if (firstPage && firstPage.length) {
+      appendChats(firstPage);
+      loadedFromBackend = true;
+      nextOffset = PAGE_SIZE;
+      hasMore = firstPage.length === PAGE_SIZE;
     }
 
-    const domChats = await loadChatsFromDom(activeTabId);
-    appendChats(domChats);
-    loadedFromBackend = false;
-    hasMore = false;
     renderChats();
-
-    if (!chats.length) {
-      setStatus("No chats found.");
-      return;
-    }
-
-    setStatus(`Loaded ${chats.length} chat(s) via page scan.`);
+    setStatus(
+      chats.length ? `Loaded ${chats.length} chats.` : "No chats found.",
+    );
   } catch (error) {
-    chats = [];
-    renderChats();
-    setStatus(error.message || "Failed to refresh chats.");
+    setStatus(error.message);
   }
 }
-
-
 
 async function deleteSelectedChats() {
   const selected = chats.filter((chat) => chat.checked);
   if (!selected.length) return;
 
-  const confirmed = confirm(
-    `Delete ${selected.length} selected chat(s)? This removes them from ChatGPT. This action cannot be reversed!`
-  );
-
-  if (!confirmed) return;
+  if (!confirm(`Delete ${selected.length} selected chat(s)?`)) return;
 
   try {
     const tab = await getActiveChatGPTTab();
     deleteBtn.disabled = true;
 
-    let successCount = 0;
-    let failCount = 0;
-    const deletedIds = [];
+    statusContainer.className = "status status-working";
+    progressWrapper.hidden = false;
+    progressPercent.hidden = false;
+    progressBar.style.width = "0%";
+    setStatus("Deleting chats...");
 
-    // 1. Fetch the Auth Token ONCE before starting the loop.
-    // This prevents sending simultaneous auth requests during batching.
-    setStatus("Fetching authorization token...");
     const token = await runInPage(tab.id, async () => {
-      try {
-        const sessionResponse = await fetch("/api/auth/session", {
-          method: "GET",
-          credentials: "include"
-        });
-        if (!sessionResponse.ok) return null;
-        const session = await sessionResponse.json();
-        return session?.accessToken || null;
-      } catch (e) {
-        return null;
-      }
+      const resp = await fetch("/api/auth/session");
+      const session = await resp.json();
+      return session?.accessToken;
     });
 
-    if (!token) {
-      throw new Error("Failed to get auth token. Please check your ChatGPT session.");
-    }
+    let successCount = 0;
+    let deletedIds = [];
 
-    // 2. Process deletions in controlled batches
     for (let i = 0; i < selected.length; i += DELETE_BATCH_SIZE) {
-      // Slice out the current batch of chats
       const batch = selected.slice(i, i + DELETE_BATCH_SIZE);
-      const currentEnd = Math.min(i + DELETE_BATCH_SIZE, selected.length);
 
-      setStatus(`Deleting chats ${i + 1} to ${currentEnd} of ${selected.length}...`);
+      // Update Progress
+      const percent = Math.round((i / selected.length) * 100);
+      progressBar.style.width = `${percent}%`;
+      progressPercent.textContent = `${percent}%`;
 
-      // Map the batch to an array of Promises
-      const batchPromises = batch.map((chat) => {
-        return runInPage(
-          tab.id,
-          async (conversationId, authToken) => {
-            try {
-              const response = await fetch(
-                `/backend-api/conversation/${encodeURIComponent(conversationId)}`,
-                {
-                  method: "PATCH",
-                  credentials: "include",
-                  headers: {
-                    Authorization: `Bearer ${authToken}`,
-                    "Content-Type": "application/json"
-                  },
-                  body: JSON.stringify({ is_visible: false })
-                }
-              );
+      const results = await Promise.allSettled(
+        batch.map((chat) =>
+          runInPage(
+            tab.id,
+            async (id, authToken) => {
+              const res = await fetch(`/backend-api/conversation/${id}`, {
+                method: "PATCH",
+                headers: {
+                  Authorization: `Bearer ${authToken}`,
+                  "Content-Type": "application/json",
+                },
+                body: JSON.stringify({ is_visible: false }),
+              });
+              return res.ok;
+            },
+            [chat.id, token],
+          ),
+        ),
+      );
 
-              if (!response.ok) {
-                const text = await response.text();
-                return {
-                  ok: false,
-                  status: response.status,
-                  error: text || `HTTP ${response.status}`
-                };
-              }
-
-              // DOM Cleanup inside the page
-              const selectors = [
-                `a[href="/c/${conversationId}"]`,
-                `a[href^="/c/${conversationId}"]`,
-                `a[href*="/c/${conversationId}"]`
-              ];
-
-              const removedNodes = [];
-              for (const selector of selectors) {
-                const nodes = document.querySelectorAll(selector);
-                for (const node of nodes) {
-                  if (!removedNodes.includes(node)) {
-                    removedNodes.push(node);
-                  }
-                }
-              }
-
-              for (const node of removedNodes) {
-                const row =
-                  node.closest("li") ||
-                  node.closest('[role="listitem"]') ||
-                  node.closest("div");
-                if (row) {
-                  row.remove();
-                } else {
-                  node.remove();
-                }
-              }
-
-              return { ok: true };
-            } catch (error) {
-              return {
-                ok: false,
-                error: error.message || "Delete request failed"
-              };
-            }
-          },
-          [chat.id, token] // Pass the cached token into the injected script
-        );
-      });
-
-      // 3. Wait for all requests in the current batch to finish
-      // Using allSettled guarantees one failing fetch won't crash the whole batch
-      const batchResults = await Promise.allSettled(batchPromises);
-
-      // 4. Tally the results
-      batchResults.forEach((result, index) => {
-        const chat = batch[index];
-        if (result.status === "fulfilled" && result.value?.ok) {
-          successCount += 1;
-          deletedIds.push(chat.id);
-        } else {
-          failCount += 1;
+      results.forEach((res, idx) => {
+        if (res.status === "fulfilled" && res.value) {
+          successCount++;
+          deletedIds.push(batch[idx].id);
         }
       });
 
-      // 5. Brief cooldown between batches to respect rate limits (500ms)
-      if (currentEnd < selected.length) {
-        await new Promise((resolve) => setTimeout(resolve, 500));
+      if (i + DELETE_BATCH_SIZE < selected.length) {
+        await new Promise((r) => setTimeout(r, 500));
       }
     }
 
-    // 6. Final UI Updates
-    if (deletedIds.length) {
-      chats = chats.filter((chat) => !deletedIds.includes(chat.id));
-      renderChats();
-    }
+    progressBar.style.width = "100%";
+    progressPercent.textContent = "100%";
+    statusContainer.className = "status status-success";
+    setStatus(`Swept ${successCount} chats away!`);
 
-    setStatus(`Deleted ${successCount}. Failed ${failCount}.`);
+    chats = chats.filter((c) => !deletedIds.includes(c.id));
+    renderChats();
 
-    if (failCount === 0 && chats.length === 0) {
-      setStatus("All selected chats deleted.");
-    }
+    setTimeout(() => {
+      progressWrapper.hidden = true;
+      progressPercent.hidden = true;
+    }, 3000);
   } catch (error) {
-    setStatus(error.message || "Delete failed.");
-    // Re-evaluate button state in case of an early exit
+    setStatus("Error: " + error.message);
+    statusContainer.className = "status status-idle";
+  } finally {
     updateSelectedCount();
   }
 }
 
-chatListEl.addEventListener("scroll", () => {
-  if (!hasMore || isLoadingMore) return;
-
-  const loadThreshold = 80;
-  const distanceFromBottom =
-    chatListEl.scrollHeight - (chatListEl.scrollTop + chatListEl.clientHeight);
-
-  if (distanceFromBottom <= loadThreshold) {
-    loadMoreChats();
-  }
-});
-
-chatListEl.addEventListener("change", (event) => {
-  const checkbox = event.target.closest('input[type="checkbox"]');
-  if (!checkbox) return;
-
-  const index = Number(checkbox.dataset.index);
-  if (!Number.isNaN(index) && chats[index]) {
-    chats[index].checked = checkbox.checked;
-    updateSelectedCount();
-    syncVisibleSelectAll();
-  }
+// Event Listeners
+chatListEl.addEventListener("change", (e) => {
+  const box = e.target.closest(".chat-checkbox");
+  if (!box) return;
+  chats[box.dataset.index].checked = box.checked;
+  updateSelectedCount();
+  syncVisibleSelectAll();
 });
 
 refreshBtn.addEventListener("click", refreshChats);
-
-selectAllBtn.addEventListener("click", () => {
-  chats = chats.map((chat) => ({ ...chat, checked: true }));
-  renderChats();
-});
-
-clearBtn.addEventListener("click", () => {
-  chats = chats.map((chat) => ({ ...chat, checked: false }));
-  renderChats();
-});
-
-if (visibleSelectAll) {
-  visibleSelectAll.addEventListener("change", () => {
-    const checked = visibleSelectAll.checked;
-    chats = chats.map((chat) => ({ ...chat, checked }));
-    renderChats();
-  });
-}
-
 deleteBtn.addEventListener("click", deleteSelectedChats);
-
-function maybeShowLoadMoreHint() {
-  if (!hasMore || isLoadingMore) return;
-
-  const threshold = 80;
-  const nearBottom =
-    chatListEl.scrollTop + chatListEl.clientHeight >= chatListEl.scrollHeight - threshold;
-
-  if (nearBottom) {
-    setStatus("Reached the bottom. Scroll again to load more chats.");
-  }
-}
+visibleSelectAll.addEventListener("change", () => {
+  const checked = visibleSelectAll.checked;
+  chats.forEach((c) => (c.checked = checked));
+  renderChats();
+});
 
 refreshChats();
