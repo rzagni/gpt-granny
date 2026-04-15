@@ -6,7 +6,7 @@
   "permissions": ["scripting", "tabs", "activeTab"],
   "host_permissions": ["https://chatgpt.com/*"],
   "action": {
-    "default_title": "GPT Granny",
+    "default_title": "Granny GPT",
     "default_popup": "granny.html"
   },
   "icons": {
